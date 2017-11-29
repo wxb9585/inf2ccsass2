@@ -162,13 +162,13 @@ int main(int argc, char** argv) {
      */
     int improper_args = 0;
     char file[10000];
-    if ( argc < 2 ) {
+    if (argc < 2) {
         improper_args = 1;
         printf("Usage: ./mem_sim [hierarchy_type: tlb-only cache-only tlb+cache] [number_of_tlb_entries: 8/16] [page_size: 256/4096] [number_of_cache_blocks: 256/2048] [cache_block_size: 32/64] mem_trace.txt\n");
-    } else  {
+    } else {
         /* argv[0] is program name, parameters start with argv[1] */
-        if ( strcmp(argv[1], "tlb-only") == 0 ) {
-            if ( argc != 5 ) {
+        if (strcmp(argv[1], "tlb-only") == 0) {
+            if (argc != 5) {
                 improper_args = 1;
                 printf("Usage: ./mem_sim tlb-only [number_of_tlb_entries: 8/16] [page_size: 256/4096] mem_trace.txt\n");
             } else {
@@ -177,8 +177,8 @@ int main(int argc, char** argv) {
                 page_size = atoi(argv[3]);
                 strcpy(file, argv[4]);
             }
-        } else if ( strcmp(argv[1], "cache-only") == 0 ) {
-            if ( argc != 6 ) {
+        } else if (strcmp(argv[1], "cache-only") == 0) {
+            if (argc != 6) {
                 improper_args = 1;
                 printf("Usage: ./mem_sim cache-only [page_size: 256/4096] [number_of_cache_blocks: 256/2048] [cache_block_size: 32/64] mem_trace.txt\n");
             } else {
@@ -188,8 +188,8 @@ int main(int argc, char** argv) {
                 cache_block_size = atoi(argv[4]);
                 strcpy(file, argv[5]);
             }
-        } else if ( strcmp(argv[1], "tlb+cache") == 0 ) {
-            if ( argc != 7 ) {
+        } else if (strcmp(argv[1], "tlb+cache") == 0) {
+            if (argc != 7) {
                 improper_args = 1;
                 printf("Usage: ./mem_sim tlb+cache [number_of_tlb_entries: 8/16] [page_size: 256/4096] [number_of_cache_blocks: 256/2048] [cache_block_size: 32/64] mem_trace.txt\n");
             } else {
@@ -205,14 +205,14 @@ int main(int argc, char** argv) {
             improper_args = 1;
         }
     }
-    if ( improper_args ) {
+    if (improper_args) {
         exit(-1);
     }
     assert(page_size == 256 || page_size == 4096);
-    if ( hierarchy_type != cache_only) {
+    if (hierarchy_type != cache_only) {
         assert(number_of_tlb_entries == 8 || number_of_tlb_entries == 16);
     }
-    if ( hierarchy_type != tlb_only) {
+    if (hierarchy_type != tlb_only) {
         assert(number_of_cache_blocks == 256 || number_of_cache_blocks == 2048);
         assert(cache_block_size == 32 || cache_block_size == 64);
     }
@@ -227,7 +227,7 @@ int main(int argc, char** argv) {
 
     /* Open the file mem_trace.txt to read memory accesses */
     FILE *ptr_file;
-    ptr_file =fopen(file,"r");
+    ptr_file = fopen(file, "r");
     if (!ptr_file) {
         printf("Unable to open the trace file: %s\n", file);
         exit(-1);
@@ -240,83 +240,126 @@ int main(int argc, char** argv) {
      * Use the following snippet and add your code to finish the task. */
 
     /* You may want to setup your TLB and/or Cache structure here. */
-    uint32_t *cachePointer = malloc(sizeof(uint32_t)*number_of_cache_blocks);
-    uint32_t *TLBONLYPoint = malloc(sizeof(uint32_t)*number_of_tlb_entries);
-    g_tlb_offset_bits = log2(page_size);
-    g_num_tlb_tag_bits = 32 - g_tlb_offset_bits;
-    g_total_num_virtual_pages = pow(2,(32 - g_tlb_offset_bits));
+    typedef struct {
+        int valid;
+        int counter;
+        uint32_t virtualPageNumber;
+        uint32_t physicalPageNumber;
+    } tlb_struct;
 
+    uint32_t *cachePointer = malloc(sizeof(uint32_t) * number_of_cache_blocks);
+    tlb_struct **TLBONLYPoint = (tlb_struct **) malloc(sizeof(tlb_struct) * number_of_tlb_entries);
+    g_tlb_offset_bits = (uint32_t) log2(page_size);
+    g_num_tlb_tag_bits = 32 - g_tlb_offset_bits;
+    g_total_num_virtual_pages = (uint32_t) pow(2, (32 - g_tlb_offset_bits));
+
+    uint32_t tlbWorking(mem_access_t access1) {
+
+        uint32_t virtual_page_num = access1.address >> g_tlb_offset_bits;
+        int tlbIsHit = 1;
+
+        for (uint32_t i = 0; i < number_of_tlb_entries; i++) {
+            TLBONLYPoint[i] = (tlb_struct *) malloc(sizeof(tlb_struct));
+        }
+        for (uint32_t i = 0; i < number_of_tlb_entries; i++) {
+            if (TLBONLYPoint[i]->valid == 1 && (TLBONLYPoint[i]->virtualPageNumber == virtual_page_num)) {
+                if (access1.accesstype == instruction) {
+                    g_result.tlb_instruction_hits++;
+                } else {
+                    g_result.tlb_data_hits++;
+                }
+                for (int a = 0; a < i; a++) {
+                    TLBONLYPoint[a]->counter++;
+                }
+
+                return TLBONLYPoint[i]->physicalPageNumber;
+            } else {
+                tlbIsHit = 0;
+            }
+        }
+        if (tlbIsHit == 0) {
+            if (access1.accesstype == instruction) {
+                g_result.tlb_instruction_misses++;
+            } else {
+                g_result.tlb_data_misses++;
+            }
+
+            for (uint32_t i = 0; i < number_of_tlb_entries; i++) {
+                if (TLBONLYPoint[i]->valid == 0) {
+                    TLBONLYPoint[i]->virtualPageNumber = virtual_page_num;
+                    TLBONLYPoint[i]->physicalPageNumber = dummy_translate_virtual_page_num(virtual_page_num);
+                }
+
+            }
+
+        }
+    }
 
     mem_access_t access;
     /* Loop until the whole trace file has been read. */
-    while(1) {
+    while (1) {
         access = read_transaction(ptr_file);
         // If no transactions left, break out of loop.
         if (access.address == 0)
             break;
         /* Add your code here */
         /* Feed the address to your TLB and/or Cache simulator and collect statistics. */
-        uint32_t virtualAddress = access.address
+        uint32_t virtualAddress = access.address;
         uint32_t tag = 0;
 
 
-        if (strcmp(argv[1], "cache-only") == 0){
-          int a = log2(cache_block_size + number_of_cache_blocks);
-          tag = virtualAddress >> a;
-          g_num_cache_tag_bits = 32 - a;
-          g_cache_offset_bits = log2(cache_block_size);
-          int index = virtualAddress << g_num_cache_tag_bits >> g_num_cache_tag_bits >> g_cache_offset_bits;
-          if(*(cachePointer + index) == tag){
-            if(access.accesstype == instruction){
-              g_result.cache_instruction_hits ++;
-            }
-            else{
-              g_result.cache_data_hits ++;
-            }
+        if (strcmp(argv[1], "cache-only") == 0) {
+            int a = (uint32_t) log2(cache_block_size + number_of_cache_blocks);
+            tag = virtualAddress >> a;
+            g_num_cache_tag_bits = (uint32_t) 32 - a;
+            g_cache_offset_bits = (uint32_t) log2(cache_block_size);
+            int index = virtualAddress << g_num_cache_tag_bits >> g_num_cache_tag_bits >> g_cache_offset_bits;
+            if (*(cachePointer + index) == tag) {
+                if (access.accesstype == instruction) {
+                    g_result.cache_instruction_hits++;
+                } else {
+                    g_result.cache_data_hits++;
+                }
 
-          }
-          else{
-            if(access.accesstype == instruction){
-              g_result.cache_instruction_misses ++;
+            } else {
+                if (access.accesstype == instruction) {
+                    g_result.cache_instruction_misses++;
+                } else {
+                    g_result.cache_data_misses++;
+                }
+                *(cachePointer + index) = tag;
             }
-            else{
-              g_result.cache_data_misses ++;
+        } else if (strcmp(argv[1], "tlb-only") == 0) {
+            uint32_t virtual_page_num = access.address >> g_tlb_offset_bits;
+            int tlbIsHit = 0;
+            int hitCount = 0;
+            for (int i = 0; i < number_of_tlb_entries; i++) {
+                if (*(TLBONLYPoint + i) == virtual_page_num) {
+                    if (access.accesstype == instruction) {
+                        g_result.tlb_instruction_hits++;
+                    } else {
+                        g_result.tlb_data_hits++;
+                    }
+                    hitCount++;
+                    tlbIsHit = 1;
+                }
             }
-            *(cachePointer + index) = tag;
-          }
+            if (tlbIsHit == 0) {
+                if (access.accesstype == instruction) {
+                    g_result.tlb_instruction_misses++;
+                } else {
+                    g_result.tlb_data_misses++;
+                }
+            }
         }
-        else if(strcmp(argv[1], "tlb-only") == 0){
-          uint32_t virtual_page_num = access.address >> g_tlb_offset_bits;
-          int tlbIsHit = 0;
-          int hitCount = 0;
-          for(int i = 0; i<number_of_tlb_entries){
-            if(*(TLBONLYPoint + i) == virtual_page_num){
-              if(access.accesstype == instruction){
-                g_result.tlb_instruction_hits ++;
-              }
-              else{
-                g_result.tlb_data_hits ++;
-              }
-              hitCount ++;
-              tlbIsHit = 1;
-             }
-            }
-            if (tlbIsHit = 0){
-            if(access.accesstype == instruction){
-              g_result.tlb_instruction_misses ++;
-            }
-            else{
-              g_result.tlb_data_misses ++;
-            }
-          }
-          }
-        }
-
     }
+
+
 
     /* Do not modify code below. */
     /* Make sure that all the parameters are appropriately populated. */
-    print_statistics(g_total_num_virtual_pages, g_num_tlb_tag_bits, g_tlb_offset_bits, g_num_cache_tag_bits, g_cache_offset_bits, &g_result);
+    print_statistics(g_total_num_virtual_pages, g_num_tlb_tag_bits, g_tlb_offset_bits, g_num_cache_tag_bits,
+                     g_cache_offset_bits, &g_result);
 
     /* Close the trace file. */
     fclose(ptr_file);
