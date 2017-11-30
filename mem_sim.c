@@ -152,23 +152,24 @@ void print_statistics(uint32_t num_virtual_pages, uint32_t num_tlb_tag_bits, uin
  *
  */
 
-
+//This is the structure of tlb
 typedef struct tlb{
-    int valid;
     struct tlb *next;
     uint32_t virtualPageNumber;
     uint32_t physicalPageNumber;
 } NODE,*NODEPTR;
 
-
+//Three pointer
 NODEPTR Head,PN,PP;
 
+//This is the function for TLB
 
 uint32_t tlbWorking(mem_access_t access) {
     uint32_t VPN = access.address >> g_tlb_offset_bits;
     uint32_t PPN;
     int counter= 0;
 
+    // if head is null we have to malloc it and catch miss
     if(Head == NULL ){
         Head = (NODEPTR)malloc(sizeof(struct tlb));
         Head->virtualPageNumber = VPN;
@@ -186,14 +187,18 @@ uint32_t tlbWorking(mem_access_t access) {
 
     PN = Head;
 
-
-
+    //while loop go through the TLBtable the that line of tlb has been located
     while (PN != NULL){
+
+        //if we are over the limit number of tlb entries we stop
         if(counter >= number_of_tlb_entries){
             break;
         }
+
+        //else check if it is his, if hit we add the hit
         if(PN->virtualPageNumber == VPN){
             PPN = PN->physicalPageNumber;
+            // update PPN with the hitted virtual pages
 
             if(access.accesstype == instruction){
                 g_result.tlb_instruction_hits++;
@@ -202,21 +207,20 @@ uint32_t tlbWorking(mem_access_t access) {
                 g_result.tlb_data_hits++;
             }
 
-
             if(counter == 0){
+                // if it is head we don't need to do any thing.
                 return PPN;
             }
             else{
-
+                // if it is not head we update it to the head as the newest access
             PP->next = PN->next;
             PN->next = Head;
             Head = PN;
             }
-
             return PPN;
-
         }
         else{
+            //if it not hit we continue go through the table
             PP = PN;
             PN = PN->next;
             counter++;
@@ -225,6 +229,7 @@ uint32_t tlbWorking(mem_access_t access) {
     }
 
     if(counter < number_of_tlb_entries){
+        // if we stop at the line which is not the final line, this means we have to build up new line
         NODEPTR temp = (NODEPTR) malloc(sizeof(struct tlb));
         temp->virtualPageNumber = VPN;
         PPN = dummy_translate_virtual_page_num(VPN);
@@ -241,6 +246,7 @@ uint32_t tlbWorking(mem_access_t access) {
         return PPN;
     }
     else{
+        // we reach the bottom and we didn't find the tag, witch means we miss so we update it and kick out the oldest one
 
         if(access.accesstype == instruction){
             g_result.tlb_instruction_misses++;
@@ -248,7 +254,6 @@ uint32_t tlbWorking(mem_access_t access) {
         else{
             g_result.tlb_data_misses++;
         }
-
 
         PP->virtualPageNumber= VPN;
         PPN= dummy_translate_virtual_page_num(VPN);
@@ -258,7 +263,6 @@ uint32_t tlbWorking(mem_access_t access) {
 
         return PPN;
     }
-
 
 
 }
@@ -356,18 +360,13 @@ int main(int argc, char** argv) {
 
 
 
-    uint32_t *TLBCache = (uint32_t*)malloc(sizeof(uint32_t) * number_of_cache_blocks);
-    uint32_t *cachePointer = (uint32_t*)malloc(sizeof(uint32_t) * number_of_cache_blocks);
+    uint32_t *TLBCache = (uint32_t*)malloc(sizeof(uint32_t) * number_of_cache_blocks);   //this is TLB and Cache table pointer
+    uint32_t *cachePointer = (uint32_t*)malloc(sizeof(uint32_t) * number_of_cache_blocks);// this is cache only pointer
     g_tlb_offset_bits = (uint32_t) log2(page_size);
     g_num_tlb_tag_bits = 32 - g_tlb_offset_bits;
     g_total_num_virtual_pages = (uint32_t) pow(2, (32 - g_tlb_offset_bits));
-    PN = (NODEPTR)malloc(sizeof(NODE));
+    PN = (NODEPTR)malloc(sizeof(NODE));//initalize pointer in tlb
     PP = (NODEPTR)malloc(sizeof(NODE));
-
-
-
-
-
 
 
 
@@ -390,15 +389,18 @@ int main(int argc, char** argv) {
 
 
         if (hierarchy_type == cache_only) {
+            // this is cache-only
             uint32_t physical_pages_number = dummy_translate_virtual_page_num(virtual_pages_number);
             uint32_t RealAddress =(physical_pages_number << g_tlb_offset_bits) + RealOffset;
             uint32_t tagbitfind = (uint32_t) log2(cache_block_size) + (uint32_t)log2(number_of_cache_blocks);
             uint32_t tag = RealAddress >> tagbitfind;
             g_num_cache_tag_bits = (uint32_t) 32 - tagbitfind;
             g_cache_offset_bits = (uint32_t) log2(cache_block_size);
-
-
+            // we got the tag, index and offset in here for cache
+            // we pass the VPN into dummy function get it real address with out offset.
             int index = RealAddress << g_num_cache_tag_bits >> g_num_cache_tag_bits >> g_cache_offset_bits;
+
+            // we find cache hit and miss.
 
             if (*(cachePointer + index) == tag) {
                 if (access.accesstype == instruction) {
@@ -413,16 +415,19 @@ int main(int argc, char** argv) {
                 } else {
                     g_result.cache_data_misses++;
                 }
+                // we update the new tag if it is miss.
                 *(cachePointer + index ) = tag;
             }
         }
 
     else if (hierarchy_type == tlb_only) {
+            // this is tlb only which we only need to call the tlbWorking
+
         uint32_t a = tlbWorking(access);
 
     }
     else if(hierarchy_type == tlb_cache){
-
+            // same as cache, the only different is the physicalAddress is from tlb not from dummy.
             uint32_t PhysicalAddress = tlbWorking(access);
             uint32_t address = (PhysicalAddress << g_tlb_offset_bits)+ RealOffset;
             uint32_t tagbitfinder = (uint32_t) log2(cache_block_size) + (uint32_t)log2(number_of_cache_blocks);
