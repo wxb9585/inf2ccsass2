@@ -153,13 +153,117 @@ void print_statistics(uint32_t num_virtual_pages, uint32_t num_tlb_tag_bits, uin
  */
 
 
-typedef struct {
+typedef struct tlb{
     int valid;
-    int counter;
+    struct tlb *next;
     uint32_t virtualPageNumber;
     uint32_t physicalPageNumber;
-} tlb_struct;
+} NODE,*NODEPTR;
 
+
+NODEPTR Head,PN,PP;
+
+
+uint32_t tlbWorking(mem_access_t access) {
+    uint32_t VPN = access.address >> g_tlb_offset_bits;
+    uint32_t PPN;
+    int counter= 0;
+
+    if(Head == NULL ){
+        Head = (NODEPTR)malloc(sizeof(struct tlb));
+        Head->virtualPageNumber = VPN;
+        PPN = dummy_translate_virtual_page_num(VPN);
+        Head -> physicalPageNumber = PPN;
+
+        if(access.accesstype == instruction){
+            g_result.tlb_instruction_misses++;
+        }
+        else{
+            g_result.tlb_data_misses++;
+        }
+        return PPN;
+    }
+
+    PN = Head;
+
+
+
+    while (PN != NULL){
+        if(counter >= number_of_tlb_entries){
+            break;
+        }
+        if(PN->virtualPageNumber == VPN){
+            PPN = PN->physicalPageNumber;
+
+            if(access.accesstype == instruction){
+                g_result.tlb_instruction_hits++;
+            }
+            else{
+                g_result.tlb_data_hits++;
+            }
+
+
+            if(counter == 0){
+                return PPN;
+            }
+            else{
+
+            PP->next = PN->next;
+            PN->next = Head;
+            Head = PN;
+            }
+
+            return PPN;
+
+        }
+        else{
+            PP = PN;
+            PN = PN->next;
+            counter++;
+        }
+
+    }
+
+    if(counter < number_of_tlb_entries){
+        NODEPTR temp = (NODEPTR) malloc(sizeof(struct tlb));
+        temp->virtualPageNumber = VPN;
+        PPN = dummy_translate_virtual_page_num(VPN);
+        temp->physicalPageNumber = PPN;
+        temp->next = Head;
+        Head = temp;
+        if(access.accesstype == instruction){
+            g_result.tlb_instruction_misses++;
+        }
+        else{
+            g_result.tlb_data_misses++;
+        }
+
+        return PPN;
+    }
+    else{
+
+        if(access.accesstype == instruction){
+            g_result.tlb_instruction_misses++;
+        }
+        else{
+            g_result.tlb_data_misses++;
+        }
+
+
+        PP->virtualPageNumber= VPN;
+        PPN= dummy_translate_virtual_page_num(VPN);
+        PP->physicalPageNumber = PPN;
+        PP->next = Head;
+        Head = PP;
+
+        return PPN;
+    }
+
+
+
+}
+
+int CacheWorking(){}
 
 
 int main(int argc, char** argv) {
@@ -249,90 +353,18 @@ int main(int argc, char** argv) {
      * Use the following snippet and add your code to finish the task. */
 
     /* You may want to setup your TLB and/or Cache structure here. */
+
+
+
     uint32_t *cachePointer = (uint32_t*)malloc(sizeof(uint32_t) * number_of_cache_blocks);
-    tlb_struct* TLBONLYPoint = (tlb_struct *) malloc(sizeof(tlb_struct) * number_of_tlb_entries);
     g_tlb_offset_bits = (uint32_t) log2(page_size);
     g_num_tlb_tag_bits = 32 - g_tlb_offset_bits;
     g_total_num_virtual_pages = (uint32_t) pow(2, (32 - g_tlb_offset_bits));
+    PN = (NODEPTR)malloc(sizeof(NODE));
+    PP = (NODEPTR)malloc(sizeof(NODE));
 
 
 
-
-
-    uint32_t tlbWorking(mem_access_t access1) {
-
-
-        uint32_t virtual_page_num = access1.address >> g_tlb_offset_bits;
-        int tlbIsHit = 1;
-        for (uint32_t i = 0; i < number_of_tlb_entries; i++) {
-            if ((TLBONLYPoint+i)->valid == 1 && ((TLBONLYPoint+i)->virtualPageNumber == virtual_page_num)) {
-
-                if (access1.accesstype == instruction) {
-                    g_result.tlb_instruction_hits++;
-                } else {
-                    g_result.tlb_data_hits++;
-                }
-                for (int a = 0; a < number_of_tlb_entries; a++) {
-
-                    if(((TLBONLYPoint+a)->counter) < ((TLBONLYPoint+i)->counter)){
-                        (TLBONLYPoint+a)->counter++;
-                    }
-                }
-                (TLBONLYPoint+i)->counter = 0;
-
-                return (TLBONLYPoint+i)->physicalPageNumber;
-            }
-
-        }
-
-        tlbIsHit = 0;
-
-        if (tlbIsHit == 0) {
-
-            if (access1.accesstype == instruction) {
-                g_result.tlb_instruction_misses++;
-            } else {
-                g_result.tlb_data_misses++;
-            }
-
-            int largestCounter = 0;
-
-
-            for (uint32_t i = 0; i < number_of_tlb_entries; i++) {
-                if ((TLBONLYPoint+i)->valid == 0) {
-                    (TLBONLYPoint+i)->virtualPageNumber = virtual_page_num;
-                    (TLBONLYPoint+i)->physicalPageNumber = dummy_translate_virtual_page_num(virtual_page_num);
-                    (TLBONLYPoint+i)->valid = 1;
-                    (TLBONLYPoint+i)->counter = 0;
-                    for(int a = 0; a < i;a++){
-                        (TLBONLYPoint+a)->counter++;
-                    }
-                    return (TLBONLYPoint+i)->physicalPageNumber;
-                }
-            }
-
-
-
-            for (uint32_t i = 0; i < number_of_tlb_entries; i++) {
-                if(((TLBONLYPoint+i)->counter) > largestCounter){
-                    largestCounter = ((TLBONLYPoint+i)->counter);
-                }
-            }
-            uint32_t final = 0;
-            for (uint32_t i = 0; i < number_of_tlb_entries; i++) {
-                if(((TLBONLYPoint+i)->counter) == largestCounter){
-                    (TLBONLYPoint+i)->physicalPageNumber = dummy_translate_virtual_page_num((TLBONLYPoint+i)->virtualPageNumber);
-                    (TLBONLYPoint+i)->virtualPageNumber = virtual_page_num;
-                    (TLBONLYPoint+i)->valid = 1;
-                    (TLBONLYPoint+i)->counter = 0;
-                    final = dummy_translate_virtual_page_num((TLBONLYPoint+i)->virtualPageNumber);
-                }
-
-            }
-            return final;
-
-        }
-    }
 
 
 
@@ -349,44 +381,50 @@ int main(int argc, char** argv) {
         /* Feed the address to your TLB and/or Cache simulator and collect statistics. */
         uint32_t virtualAddress = access.address;
         uint32_t virtual_pages_number = virtualAddress >> g_tlb_offset_bits;
-        uint32_t physical_pages_number = dummy_translate_virtual_page_num(virtual_pages_number);
         uint32_t RealOffset = virtualAddress << g_num_tlb_tag_bits >> g_num_tlb_tag_bits;
-        uint32_t RealAddress = (physical_pages_number << g_tlb_offset_bits) + RealOffset;
-
 
         if (hierarchy_type == cache_only) {
-            uint32_t a = (uint32_t) log2(cache_block_size) + (uint32_t)log2(number_of_cache_blocks);
-            uint32_t tag = RealAddress >> a;
-            g_num_cache_tag_bits = (uint32_t) 32 - a;
-            g_cache_offset_bits = (uint32_t) log2(cache_block_size);
 
-            int index = RealAddress << g_num_cache_tag_bits >> g_num_cache_tag_bits >> g_cache_offset_bits;
 
-            if (*(cachePointer + index) == tag) {
-                if (access.accesstype == instruction) {
-                    g_result.cache_instruction_hits++;
-                } else {
-                    g_result.cache_data_hits++;
-                }
+        uint32_t physical_pages_number = dummy_translate_virtual_page_num(virtual_pages_number);
+        uint32_t RealAddress =(physical_pages_number << g_tlb_offset_bits) + RealOffset;
+        uint32_t tagbitfind = (uint32_t) log2(cache_block_size) + (uint32_t)log2(number_of_cache_blocks);
+        uint32_t tag = RealAddress >> tagbitfind;
+        g_num_cache_tag_bits = (uint32_t) 32 - tagbitfind;
+        g_cache_offset_bits = (uint32_t) log2(cache_block_size);
 
+
+
+        int index = RealAddress << g_num_cache_tag_bits >> g_num_cache_tag_bits >> g_cache_offset_bits;
+
+        if (*(cachePointer + index) == tag) {
+            if (access.accesstype == instruction) {
+                g_result.cache_instruction_hits++;
             } else {
-                if (access.accesstype == instruction) {
-                    g_result.cache_instruction_misses++;
-                } else {
-                    g_result.cache_data_misses++;
-                }
-                *(cachePointer + index ) = tag;
+                g_result.cache_data_hits++;
             }
-        }
-        else if (strcmp(argv[1], "tlb-only") == 0) {
-            uint32_t a = tlbWorking(access);
 
+        } else {
+            if (access.accesstype == instruction) {
+                g_result.cache_instruction_misses++;
+            } else {
+                g_result.cache_data_misses++;
+            }
+            *(cachePointer + index ) = tag;
         }
-        else if((strcmp(argv[1], "tlb+cache") == 0)){
-            uint32_t b = tlbWorking(access);
-            uint32_t converRealAddress = b << g_tlb_offset_bits+RealOffset;
+    }
 
-        }
+    else if (hierarchy_type == tlb_only) {
+        uint32_t a = tlbWorking(access);
+
+    }
+    else if(hierarchy_type == tlb_cache){
+        uint32_t b = tlbWorking(access);
+        uint32_t converRealAddress = b << g_tlb_offset_bits+RealOffset;
+
+    }
+
+
     }
 
 
