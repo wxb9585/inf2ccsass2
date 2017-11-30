@@ -383,36 +383,38 @@ int main(int argc, char** argv) {
         uint32_t virtual_pages_number = virtualAddress >> g_tlb_offset_bits;
         uint32_t RealOffset = virtualAddress << g_num_tlb_tag_bits >> g_num_tlb_tag_bits;
 
+
+
+
+
+
         if (hierarchy_type == cache_only) {
+            uint32_t physical_pages_number = dummy_translate_virtual_page_num(virtual_pages_number);
+            uint32_t RealAddress =(physical_pages_number << g_tlb_offset_bits) + RealOffset;
+            uint32_t tagbitfind = (uint32_t) log2(cache_block_size) + (uint32_t)log2(number_of_cache_blocks);
+            uint32_t tag = RealAddress >> tagbitfind;
+            g_num_cache_tag_bits = (uint32_t) 32 - tagbitfind;
+            g_cache_offset_bits = (uint32_t) log2(cache_block_size);
 
 
-        uint32_t physical_pages_number = dummy_translate_virtual_page_num(virtual_pages_number);
-        uint32_t RealAddress =(physical_pages_number << g_tlb_offset_bits) + RealOffset;
-        uint32_t tagbitfind = (uint32_t) log2(cache_block_size) + (uint32_t)log2(number_of_cache_blocks);
-        uint32_t tag = RealAddress >> tagbitfind;
-        g_num_cache_tag_bits = (uint32_t) 32 - tagbitfind;
-        g_cache_offset_bits = (uint32_t) log2(cache_block_size);
+            int index = RealAddress << g_num_cache_tag_bits >> g_num_cache_tag_bits >> g_cache_offset_bits;
 
+            if (*(cachePointer + index) == tag) {
+                if (access.accesstype == instruction) {
+                    g_result.cache_instruction_hits++;
+                } else {
+                    g_result.cache_data_hits++;
+                }
 
-
-        int index = RealAddress << g_num_cache_tag_bits >> g_num_cache_tag_bits >> g_cache_offset_bits;
-
-        if (*(cachePointer + index) == tag) {
-            if (access.accesstype == instruction) {
-                g_result.cache_instruction_hits++;
             } else {
-                g_result.cache_data_hits++;
+                if (access.accesstype == instruction) {
+                    g_result.cache_instruction_misses++;
+                } else {
+                    g_result.cache_data_misses++;
+                }
+                *(cachePointer + index ) = tag;
             }
-
-        } else {
-            if (access.accesstype == instruction) {
-                g_result.cache_instruction_misses++;
-            } else {
-                g_result.cache_data_misses++;
-            }
-            *(cachePointer + index ) = tag;
         }
-    }
 
     else if (hierarchy_type == tlb_only) {
         uint32_t a = tlbWorking(access);
