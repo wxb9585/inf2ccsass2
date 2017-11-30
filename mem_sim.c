@@ -263,7 +263,7 @@ uint32_t tlbWorking(mem_access_t access) {
 
 }
 
-int CacheWorking(){}
+
 
 
 int main(int argc, char** argv) {
@@ -356,6 +356,7 @@ int main(int argc, char** argv) {
 
 
 
+    uint32_t *TLBCache = (uint32_t*)malloc(sizeof(uint32_t) * number_of_cache_blocks);
     uint32_t *cachePointer = (uint32_t*)malloc(sizeof(uint32_t) * number_of_cache_blocks);
     g_tlb_offset_bits = (uint32_t) log2(page_size);
     g_num_tlb_tag_bits = 32 - g_tlb_offset_bits;
@@ -421,8 +422,30 @@ int main(int argc, char** argv) {
 
     }
     else if(hierarchy_type == tlb_cache){
-        uint32_t b = tlbWorking(access);
-        uint32_t converRealAddress = b << g_tlb_offset_bits+RealOffset;
+
+            uint32_t PhysicalAddress = tlbWorking(access);
+            uint32_t address = (PhysicalAddress << g_tlb_offset_bits)+ RealOffset;
+            uint32_t tagbitfinder = (uint32_t) log2(cache_block_size) + (uint32_t)log2(number_of_cache_blocks);
+            uint32_t tag = address >> tagbitfinder;
+            g_num_cache_tag_bits = (uint32_t) 32 - tagbitfinder;
+            g_cache_offset_bits = (uint32_t) log2(cache_block_size);
+            int index = address << g_num_cache_tag_bits >> g_num_cache_tag_bits >> g_cache_offset_bits;
+            if (*(TLBCache + index) == tag) {
+                if (access.accesstype == instruction) {
+                    g_result.cache_instruction_hits++;
+                } else {
+                    g_result.cache_data_hits++;
+                }
+
+            } else {
+                if (access.accesstype == instruction) {
+                    g_result.cache_instruction_misses++;
+                } else {
+                    g_result.cache_data_misses++;
+                }
+                *(TLBCache + index ) = tag;
+            }
+
 
     }
 
